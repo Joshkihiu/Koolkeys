@@ -9,10 +9,13 @@ import android.bluetooth.BluetoothHidDeviceAppSdpSettings;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.BroadcastReceiver;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.core.content.ContextCompat;
 import androidx.core.app.NotificationCompat;
@@ -63,12 +66,37 @@ public class BluetoothManager {
     private StatusListener statusListener;
     private boolean appRegistered;
     private boolean profileRequestPending;
+    private boolean registrationDesired;
+    private boolean receiverRegistered;
+    private int registrationAttempts;
+    private long registrationGeneration;
     private String status = "Bluetooth not initialized";
     private int modifierMask;
     private final Runnable registrationTimeout = () -> {
         profileRequestPending = false;
         if (!appRegistered) {
-            updateStatus("HID registration timed out. This phone or Android build may not support HID Device.");
+            retryRegistrationOrReportTimeout();
+        }
+    };
+
+    private final BroadcastReceiver bluetoothStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context receivingContext, Intent intent) {
+            if (intent == null || !BluetoothAdapter.ACTION_STATE_CHANGED.equals(intent.getAction())) return;
+            int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR);
+            if (state == BluetoothAdapter.STATE_OFF) {
+                cleanupHidProxy();
+                connectedDevice = null;
+                appRegistered = false;
+                updateStatus("Bluetooth off. Turn it on to restore HID.");
+            } else if (state == BluetoothAdapter.STATE_ON) {
+                updateStatus("Bluetooth on.");
+                if (registrationDesired) {
+                    handler.postDelayed(() -> {
+                        if (registrationDesired) registerHid(pendingDevice);
+                    }, 750);
+                }
+            }
         }
     };
 
@@ -83,8 +111,10 @@ public class BluetoothManager {
                 modifierMask = 0;
                 updateStatus("HID profile registration was lost. Keep KoolKeys open and try again.");
             } else if (pendingDevice != null) {
+                registrationAttempts = 0;
                 connectToPendingDevice();
             } else {
+                registrationAttempts = 0;
                 updateStatus("HID ready. Pair this phone from Windows Bluetooth settings.");
             }
         }
@@ -117,6 +147,10 @@ public class BluetoothManager {
             (android.bluetooth.BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
         adapter = manager == null ? null : manager.getAdapter();
         callbackExecutor = ContextCompat.getMainExecutor(context);
+        IntentFilter bluetoothFilter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+        ContextCompat.registerReceiver(this.context, bluetoothStateReceiver, bluetoothFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED);
+        receiverRegistered = true;
     }
 
     public void setStatusListener(StatusListener listener) {
@@ -141,6 +175,8 @@ public class BluetoothManager {
     }
 
     public void registerHid(BluetoothDevice device) {
+        registrationDesired = true;
+        pendingDevice = device;
         if (!hasHidApi()) {
             updateStatus("Bluetooth HID Device requires Android 9+ and a compatible phone.");
             return;
@@ -158,7 +194,6 @@ public class BluetoothManager {
                 updateStatus("Turn on Bluetooth, then try Connect again.");
                 return;
             }
-            pendingDevice = device;
             if (hidDevice != null && appRegistered) {
                 if (device == null) updateStatus("HID ready. Pair this phone from Windows Bluetooth settings.");
                 else connectToPendingDevice();
@@ -172,9 +207,10 @@ public class BluetoothManager {
             if (!requested) updateStatus("This phone could not open the Bluetooth HID Device profile.");
             else {
                 profileRequestPending = true;
+                registrationAttempts++;
                 updateStatus("Opening Bluetooth HID profile...");
                 handler.removeCallbacks(registrationTimeout);
-                handler.postDelayed(registrationTimeout, 10000);
+                handler.postDelayed(registrationTimeout, 15000);
             }
         } catch (SecurityException exception) {
             updateStatus("Bluetooth permission was denied. Allow Nearby devices and retry.");
@@ -182,18 +218,34 @@ public class BluetoothManager {
     }
 
     public void disconnect() {
+        registrationDesired = false;
         if (hidDevice == null) {
             updateStatus("Not connected");
             return;
         }
         try {
-            if (connectedDevice != null) hidDevice.disconnect(connectedDevice);
-            else if (appRegistered) {
+            if (connectedDevice != null) {
+                hidDevice.disconnect(connectedDevice);
+            } else if (appRegistered) {
                 hidDevice.unregisterApp();
                 updateStatus("HID disconnected");
             }
+            handler.postDelayed(this::cleanupHidProxy, 250);
         } catch (SecurityException exception) {
             updateStatus("Bluetooth permission was denied while disconnecting.");
+        }
+    }
+
+    public void shutdown() {
+        registrationDesired = false;
+        handler.removeCallbacks(registrationTimeout);
+        cleanupHidProxy();
+        if (receiverRegistered) {
+            try {
+                context.unregisterReceiver(bluetoothStateReceiver);
+            } catch (IllegalArgumentException ignored) {
+            }
+            receiverRegistered = false;
         }
     }
 
@@ -211,7 +263,7 @@ public class BluetoothManager {
                 else {
                     updateStatus("Registering as a Bluetooth keyboard and mouse...");
                     handler.removeCallbacks(registrationTimeout);
-                    handler.postDelayed(registrationTimeout, 10000);
+                    handler.postDelayed(registrationTimeout, 15000);
                 }
             } catch (SecurityException exception) {
                 updateStatus("Bluetooth permission was denied during HID registration.");
@@ -229,6 +281,41 @@ public class BluetoothManager {
             updateStatus("Bluetooth HID profile disconnected. Tap Connect to retry.");
         }
     };
+
+    private void retryRegistrationOrReportTimeout() {
+        if (!registrationDesired || appRegistered) return;
+        if (registrationAttempts < 2) {
+            updateStatus("HID registration timed out. Retrying automatically...");
+            cleanupHidProxy();
+            handler.postDelayed(() -> {
+                if (registrationDesired && !appRegistered) registerHid(pendingDevice);
+            }, 750);
+            return;
+        }
+        updateStatus("HID registration timed out after retries. Turn Bluetooth off/on or reopen KoolKeys.");
+        cleanupHidProxy();
+    }
+
+    private void cleanupHidProxy() {
+        handler.removeCallbacks(registrationTimeout);
+        profileRequestPending = false;
+        BluetoothHidDevice proxy = hidDevice;
+        boolean wasRegistered = appRegistered;
+        hidDevice = null;
+        appRegistered = false;
+        connectedDevice = null;
+        modifierMask = 0;
+        if (proxy != null) {
+            try {
+                if (wasRegistered) proxy.unregisterApp();
+            } catch (SecurityException ignored) {
+            }
+            try {
+                adapter.closeProfileProxy(BluetoothProfile.HID_DEVICE, proxy);
+            } catch (Exception ignored) {
+            }
+        }
+    }
 
     private void connectToPendingDevice() {
         if (hidDevice == null || pendingDevice == null || !hasConnectPermission()) return;
@@ -316,6 +403,7 @@ public class BluetoothManager {
             return false;
         }
         boolean pressed = sendKeyboardReport(usage, modifierMask | extraModifiers);
+        if (usage != 0) SystemClock.sleep(6);
         boolean released = sendKeyboardReport(0, modifierMask);
         return pressed && released;
     }

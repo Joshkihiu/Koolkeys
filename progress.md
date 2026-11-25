@@ -21,8 +21,10 @@ This repository contains a Java/XML Android project with the main screens and co
 
 ## In progress
 
+- Fix text typing, pause/resume/stop state handling, and randomized timing.
+- Improve HID lifecycle/re-registration recovery.
+- Replace the manual keyboard grid and verify key transmission.
 - Exercise navigation, editor persistence, preview/confirmation, and session flows on the Redmi.
-- Verify Bluetooth HID registration and real keyboard/mouse input on the phone and Windows host.
 
 ## Known limitations
 
@@ -37,6 +39,12 @@ This repository contains a Java/XML Android project with the main screens and co
 - APK signature verified with the Android debug key; installed on the authorized Redmi Note 14.
 - ADB confirms the KoolKeys process remains alive after relaunch and the home keyboard controls render.
 - Redmi denies `adb shell input` with `INJECT_EVENTS` permission; no connected phone-mirroring window is available for further UI navigation.
+- Added exact-action typing reconstruction so randomized timing only changes delays.
+- Added cancellable typing-session state with generation-checked callbacks and pause/resume position preservation.
+- Added HID Bluetooth state receiver, proxy cleanup, and bounded automatic re-registration retry.
+- Replaced the manually built QWERTY grid with the Apache-licensed `io.github.hijamoya:keyboardview:0.0.2` reusable `KeyboardView`.
+- Focused `TypingActionTest` unit tests pass, including Python text, CRLF, tabs, and backspaces.
+- Updated APK builds and installs successfully; KoolKeys process 30796 remains foreground and no latest-launch crash was recorded.
 - Downloads through curl and PowerShell web requests have encountered unexpected EOF/network failures; bounded BITS transfers succeeded for the verified SDK tools and JDK archives.
 - Bluetooth HID Device support varies by phone and OS build. API level alone does not prove support; profile registration and a Windows-host connection still require device verification.
 - HID key mapping is currently US QWERTY only. The Windows host must use a matching layout; non-US/non-ASCII code characters are rejected before insertion.

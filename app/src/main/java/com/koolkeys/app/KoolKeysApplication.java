@@ -54,6 +54,12 @@ public class KoolKeysApplication extends Application {
         return sessionManager;
     }
 
+    @Override
+    public void onTerminate() {
+        bluetoothManager.shutdown();
+        super.onTerminate();
+    }
+
     public boolean areNotificationsEnabled() {
         return getSharedPreferences("koolkeys_settings", MODE_PRIVATE)
             .getBoolean("notifications", true);

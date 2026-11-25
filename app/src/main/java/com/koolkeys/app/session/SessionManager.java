@@ -6,6 +6,10 @@ import android.os.SystemClock;
 
 import com.koolkeys.app.bluetooth.BluetoothManager;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+
 public class SessionManager {
     public interface Listener {
         void onProgress(int completedCharacters, int totalCharacters, int currentLine,
@@ -23,50 +27,53 @@ public class SessionManager {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final BluetoothManager bluetooth;
+    private final Random random = new Random();
     private Listener listener;
     private LifecycleListener lifecycleListener;
     private String text = "";
+    private List<TypingAction> actions = Collections.emptyList();
     private int position;
+    private int actionPosition;
     private int currentLine = 1;
     private boolean running;
     private boolean paused;
     private long intervalMillis = 40;
     private long elapsedMillis;
+    private long elapsedAtPause;
+    private long sessionStartedAt;
     private long durationMillis;
     private long reviewIntervalMillis;
     private long reviewRemainingMillis;
     private long nextTickAt;
     private long nextReviewAt;
     private long tickRemainingMillis;
+    private long stateGeneration;
 
     private final Runnable tick = new Runnable() {
         @Override public void run() {
-            if (!running || paused) return;
+            if (!running || paused || actionPosition >= actions.size()) {
+                if (running && !paused && actionPosition >= actions.size()) complete();
+                return;
+            }
+            long tickGeneration = stateGeneration;
             if (!bluetooth.isConnected()) {
                 stop();
                 notifyState("Connection lost. Insertion stopped safely.");
                 return;
             }
-            if (position >= text.length()) {
-                complete();
-                return;
-            }
 
-            char character = text.charAt(position++);
+            TypingAction action = actions.get(actionPosition++);
+            position = action.positionAfter;
             boolean sent;
-            if (character == '\r') {
-                if (position < text.length() && text.charAt(position) == '\n') position++;
+            if (action.type == TypingAction.Type.ENTER) {
                 sent = bluetooth.sendEnter();
                 currentLine++;
-            } else if (character == '\n') {
-                sent = bluetooth.sendEnter();
-                currentLine++;
-            } else if (character == '\t') {
+            } else if (action.type == TypingAction.Type.TAB) {
                 sent = bluetooth.sendTab();
-            } else if (character == '\b') {
+            } else if (action.type == TypingAction.Type.BACKSPACE) {
                 sent = bluetooth.sendBackspace();
             } else {
-                sent = bluetooth.sendCharacter(character);
+                sent = bluetooth.sendCharacter(action.character);
             }
 
             if (!sent) {
@@ -74,12 +81,12 @@ public class SessionManager {
                 notifyState("Input could not be sent. Check the connection and keyboard layout.");
                 return;
             }
-            elapsedMillis = Math.min(durationMillis, elapsedMillis + intervalMillis);
+            updateElapsed();
             notifyProgress();
-            if (position >= text.length()) {
+            if (actionPosition >= actions.size()) {
                 complete();
-            } else {
-                scheduleNext(intervalMillis);
+            } else if (tickGeneration == stateGeneration) {
+                scheduleNext(nextRandomDelay());
             }
         }
     };
@@ -111,21 +118,27 @@ public class SessionManager {
     }
 
     public void configure(String text, long durationMillis, long reviewIntervalMillis, boolean extendedMode) {
+        stateGeneration++;
         stopCallbacks();
+        running = false;
+        paused = false;
         this.text = text == null ? "" : text;
+        this.actions = TypingAction.build(this.text);
         this.position = 0;
+        this.actionPosition = 0;
         this.currentLine = 1;
         this.elapsedMillis = 0;
+        this.elapsedAtPause = 0;
         this.durationMillis = Math.max(1, durationMillis);
         this.reviewIntervalMillis = Math.max(0, reviewIntervalMillis);
         this.reviewRemainingMillis = this.reviewIntervalMillis;
-        int actionCount = countActions(this.text);
-        this.intervalMillis = extendedMode && actionCount > 0
-            ? Math.max(1, this.durationMillis / actionCount)
+        int actionCount = actions.size();
+        intervalMillis = extendedMode && actionCount > 0
+            ? Math.max(8, this.durationMillis / actionCount)
             : 40;
-        this.tickRemainingMillis = this.intervalMillis;
-        this.running = false;
-        this.paused = false;
+        tickRemainingMillis = nextRandomDelay();
+        notifyProgress();
+        notifyState(getState());
     }
 
     public void start() {
@@ -145,8 +158,11 @@ public class SessionManager {
         }
         running = true;
         paused = false;
+        elapsedMillis = 0;
+        elapsedAtPause = 0;
+        sessionStartedAt = SystemClock.elapsedRealtime();
         notifyState("Automated insertion running");
-        scheduleNext(tickRemainingMillis);
+        scheduleNext(nextRandomDelay());
         scheduleReviewReminder();
     }
 
@@ -155,28 +171,42 @@ public class SessionManager {
         paused = true;
         long now = SystemClock.elapsedRealtime();
         tickRemainingMillis = Math.max(1, nextTickAt - now);
+        elapsedAtPause = getElapsedNow(now);
+        elapsedMillis = elapsedAtPause;
         handler.removeCallbacks(tick);
         if (reviewIntervalMillis > 0) {
             reviewRemainingMillis = Math.max(0, nextReviewAt - now);
             handler.removeCallbacks(reviewTick);
         }
+        notifyProgress();
         notifyState("Paused");
     }
 
     public void resume() {
         if (!running || !paused) return;
         paused = false;
+        elapsedAtPause = elapsedMillis;
+        sessionStartedAt = SystemClock.elapsedRealtime();
         notifyState("Automated insertion running");
         scheduleNext(tickRemainingMillis);
         if (reviewIntervalMillis > 0) {
             handler.postDelayed(reviewTick, Math.max(1, reviewRemainingMillis));
+            nextReviewAt = SystemClock.elapsedRealtime() + Math.max(1, reviewRemainingMillis);
         }
     }
 
     public void stop() {
+        stateGeneration++;
         running = false;
         paused = false;
         stopCallbacks();
+        position = 0;
+        actionPosition = 0;
+        elapsedMillis = 0;
+        elapsedAtPause = 0;
+        currentLine = 1;
+        tickRemainingMillis = intervalMillis;
+        notifyProgress();
         notifyState("Stopped");
         if (lifecycleListener != null) lifecycleListener.onStopped();
     }
@@ -187,6 +217,7 @@ public class SessionManager {
     public long getDurationMillis() { return durationMillis; }
 
     private void complete() {
+        stateGeneration++;
         running = false;
         paused = false;
         stopCallbacks();
@@ -198,10 +229,10 @@ public class SessionManager {
     }
 
     private void scheduleNext(long delayMillis) {
-        tickRemainingMillis = delayMillis;
-        nextTickAt = SystemClock.elapsedRealtime() + delayMillis;
+        tickRemainingMillis = Math.max(1, delayMillis);
+        nextTickAt = SystemClock.elapsedRealtime() + tickRemainingMillis;
         handler.removeCallbacks(tick);
-        handler.postDelayed(tick, delayMillis);
+        handler.postDelayed(tick, tickRemainingMillis);
     }
 
     private void scheduleReviewReminder() {
@@ -217,11 +248,21 @@ public class SessionManager {
         handler.removeCallbacks(reviewTick);
     }
 
-    private String getState() {
-        if (running && paused) return "Paused";
-        if (running) return "Automated insertion running";
-        if (position >= text.length() && !text.isEmpty()) return "Completed";
-        return "Ready";
+    private long nextRandomDelay() {
+        long minimum = Math.max(8, (intervalMillis * 70L) / 100L);
+        long maximum = Math.min(5000, Math.max(minimum + 1,
+            (intervalMillis * 130L) / 100L));
+        if (maximum <= minimum) return minimum;
+        return minimum + random.nextInt((int) (maximum - minimum));
+    }
+
+    private void updateElapsed() {
+        elapsedMillis = getElapsedNow(SystemClock.elapsedRealtime());
+    }
+
+    private long getElapsedNow(long now) {
+        long runningElapsed = elapsedAtPause + Math.max(0, now - sessionStartedAt);
+        return Math.min(durationMillis, runningElapsed);
     }
 
     private void notifyState(String state) {
@@ -234,12 +275,10 @@ public class SessionManager {
         }
     }
 
-    private int countActions(String value) {
-        int count = 0;
-        for (int i = 0; i < value.length(); i++) {
-            if (value.charAt(i) == '\r' && i + 1 < value.length() && value.charAt(i + 1) == '\n') i++;
-            count++;
-        }
-        return count;
+    private String getState() {
+        if (running && paused) return "Paused";
+        if (running) return "Automated insertion running";
+        if (position >= text.length() && !text.isEmpty()) return "Completed";
+        return "Ready";
     }
 }

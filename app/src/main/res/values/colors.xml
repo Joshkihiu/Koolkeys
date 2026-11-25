@@ -11,4 +11,5 @@
     <color name="text_primary">#F2F4F8</color>
     <color name="text_muted">#9DA5B3</color>
     <color name="editor_line">#697182</color>
+    <color name="border">#343945</color>
 </resources>

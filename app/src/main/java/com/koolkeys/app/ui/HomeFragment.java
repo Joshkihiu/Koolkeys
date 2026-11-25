@@ -50,42 +50,57 @@ public class HomeFragment extends Fragment {
         touchpad.setBluetoothManager(bluetoothManager);
         view.findViewById(R.id.left_click).setOnClickListener(v -> bluetoothManager.mouseClick(false));
         view.findViewById(R.id.right_click).setOnClickListener(v -> bluetoothManager.mouseClick(true));
-        view.findViewById(R.id.key_enter).setOnClickListener(v -> bluetoothManager.sendEnter());
-        view.findViewById(R.id.key_tab).setOnClickListener(v -> bluetoothManager.sendTab());
-        view.findViewById(R.id.key_esc).setOnClickListener(v -> bluetoothManager.sendEscape());
-        view.findViewById(R.id.key_backspace).setOnClickListener(v -> bluetoothManager.sendBackspace());
-        view.findViewById(R.id.key_space).setOnClickListener(v -> bluetoothManager.sendCharacter(' '));
-        view.findViewById(R.id.key_left).setOnClickListener(v -> bluetoothManager.sendArrow(0x50));
-        view.findViewById(R.id.key_down).setOnClickListener(v -> bluetoothManager.sendArrow(0x51));
-        view.findViewById(R.id.key_up).setOnClickListener(v -> bluetoothManager.sendArrow(0x52));
-        view.findViewById(R.id.key_right).setOnClickListener(v -> bluetoothManager.sendArrow(0x4F));
-        view.findViewById(R.id.key_shift).setOnClickListener(v -> {
-            shiftEnabled = !shiftEnabled;
-            bluetoothManager.setModifier(0x02, shiftEnabled);
+        com.hijamoya.keyboardview.KeyboardView keyboard =
+            view.findViewById(R.id.qwerty_keyboard);
+        keyboard.setKeyboard(new com.hijamoya.keyboardview.Keyboard(
+            requireContext(), R.xml.qwerty_keyboard));
+        keyboard.setOnKeyboardActionListener(new com.hijamoya.keyboardview.KeyboardView.OnKeyboardActionListener() {
+            @Override public void onPress(int primaryCode) { }
+            @Override public void onRelease(int primaryCode) { }
+            @Override public void onKey(int primaryCode, int[] keyCodes) {
+                if (primaryCode == -1) {
+                    shiftEnabled = !shiftEnabled;
+                    bluetoothManager.setModifier(0x02, shiftEnabled);
+                } else if (primaryCode == -1001) {
+                    ctrlEnabled = !ctrlEnabled;
+                    bluetoothManager.setModifier(0x01, ctrlEnabled);
+                } else if (primaryCode == -6) {
+                    altEnabled = !altEnabled;
+                    bluetoothManager.setModifier(0x04, altEnabled);
+                } else if (primaryCode == -5) {
+                    bluetoothManager.sendBackspace();
+                } else if (primaryCode == 10) {
+                    bluetoothManager.sendEnter();
+                } else if (primaryCode == 9) {
+                    bluetoothManager.sendTab();
+                } else if (primaryCode == 27) {
+                    bluetoothManager.sendEscape();
+                } else if (primaryCode >= 5001 && primaryCode <= 5005) {
+                    bluetoothManager.sendArrow(0x3A + primaryCode - 5001);
+                } else if (primaryCode == 5006) {
+                    bluetoothManager.sendArrow(0x50);
+                } else if (primaryCode == 5007) {
+                    bluetoothManager.sendArrow(0x51);
+                } else if (primaryCode == 5008) {
+                    bluetoothManager.sendArrow(0x52);
+                } else if (primaryCode == 5009) {
+                    bluetoothManager.sendArrow(0x4F);
+                } else if (primaryCode > 0) {
+                    bluetoothManager.sendCharacter((char) primaryCode);
+                }
+            }
+            @Override public void onText(CharSequence text) {
+                if (text != null) {
+                    for (int i = 0; i < text.length(); i++) {
+                        bluetoothManager.sendCharacter(text.charAt(i));
+                    }
+                }
+            }
+            @Override public void swipeLeft() { }
+            @Override public void swipeRight() { }
+            @Override public void swipeDown() { }
+            @Override public void swipeUp() { }
         });
-        view.findViewById(R.id.key_ctrl).setOnClickListener(v -> {
-            ctrlEnabled = !ctrlEnabled;
-            bluetoothManager.setModifier(0x01, ctrlEnabled);
-        });
-        view.findViewById(R.id.key_alt).setOnClickListener(v -> {
-            altEnabled = !altEnabled;
-            bluetoothManager.setModifier(0x04, altEnabled);
-        });
-
-        android.widget.LinearLayout functionKeys = view.findViewById(R.id.function_keys);
-        for (int i = 0; i < 12; i++) {
-            final int usage = 0x3A + i;
-            Button functionKey = new Button(requireContext());
-            functionKey.setText("F" + (i + 1));
-            functionKey.setOnClickListener(v -> bluetoothManager.sendArrow(usage));
-            functionKeys.addView(functionKey);
-        }
-
-        android.widget.GridLayout keyboard = view.findViewById(R.id.qwerty_keyboard);
-        addQwertyRow(keyboard, "1234567890", bluetoothManager);
-        addQwertyRow(keyboard, "QWERTYUIOP", bluetoothManager);
-        addQwertyRow(keyboard, "ASDFGHJKL", bluetoothManager);
-        addQwertyRow(keyboard, "ZXCVBNM", bluetoothManager);
         return view;
     }
 
@@ -110,22 +125,6 @@ public class HomeFragment extends Fragment {
             .setItems(names, (dialog, index) -> bluetoothManager.registerHid(devices.get(index)))
             .setNegativeButton("Cancel", null)
             .show();
-    }
-
-    private void addQwertyRow(android.widget.GridLayout keyboard, String row, BluetoothManager bluetoothManager) {
-        for (char character : row.toCharArray()) {
-            Button key = new Button(requireContext());
-            key.setText(String.valueOf(character));
-            key.setAllCaps(false);
-            key.setPadding(4, 4, 4, 4);
-            key.setOnClickListener(v -> bluetoothManager.sendCharacter(character));
-            android.widget.GridLayout.LayoutParams params =
-                new android.widget.GridLayout.LayoutParams();
-            params.width = 0;
-            params.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-            params.columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f);
-            keyboard.addView(key, params);
-        }
     }
 
     private void updateStatus() {
