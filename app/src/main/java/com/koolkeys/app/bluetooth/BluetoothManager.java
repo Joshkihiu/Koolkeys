@@ -74,7 +74,7 @@ public class BluetoothManager {
 
     private final BluetoothHidDevice.Callback hidCallback = new BluetoothHidDevice.Callback() {
         @Override
-        public void onAppStatusChanged(BluetoothHidDevice proxy, boolean registered) {
+        public void onAppStatusChanged(BluetoothDevice device, boolean registered) {
             appRegistered = registered;
             profileRequestPending = false;
             handler.removeCallbacks(registrationTimeout);

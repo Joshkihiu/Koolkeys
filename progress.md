@@ -2,7 +2,7 @@
 
 ## Current status
 
-This repository contains a Java/XML Android Studio project with the main screens and core app flows implemented. It has not yet been compiled or run on a device.
+This repository contains a Java/XML Android project with the main screens and core app flows implemented. The debug build succeeds and the app is installed on the Redmi Note 14.
 
 ## Completed
 
@@ -21,32 +21,36 @@ This repository contains a Java/XML Android Studio project with the main screens
 
 ## In progress
 
-- Set up the JDK, Android SDK, Gradle build, and ADB access to the connected phone.
-- Compile the app, resolve any Android/Gradle errors, generate a signed APK, and install it on the phone.
+- Exercise navigation, editor persistence, preview/confirmation, and session flows on the Redmi.
 - Verify Bluetooth HID registration and real keyboard/mouse input on the phone and Windows host.
 
 ## Known limitations
 
-- This environment currently has no Java/JDK, Gradle, Android SDK, `adb`, or `sdkmanager` on PATH or in the checked Android locations.
-- WinGet can locate the JDK/Android Studio packages, but package installation failed with a network connection error; an explicit-source JDK install also stalled and was stopped.
-- Retried the Android Studio install after the phone was reconnected; it made no progress and was stopped. The local tool check still finds no Android Studio or build tools.
-- The user identified the target phone as a Redmi Note 14. Windows shows Xiaomi-vendor USB entries (`VID_2717&PID_FF80` and `VID_2717&PID_FF48`) as unknown USB composite devices; no ADB interface/tool is available, so USB installation is not possible yet.
-- A separate Samsung-vendor entry (`VID_04E8`) was mistakenly attributed to the target phone; it is unrelated and no Samsung software/driver was installed.
-- Rechecked after the USB-debugging retry: the Redmi's Xiaomi USB entries remain unknown and `adb` is still unavailable. No Java/Gradle/Android SDK tools are installed.
+- Google Android Platform Tools 37.0.3 is installed at `C:\Android\Sdk\platform-tools`; `adb devices -l` detects the authorized Redmi Note 14 (`24117RN76G`, serial `ai4pm7tsfqaqn7kb`).
+- Android command-line tools 23.0 and Java-based 20.0 are installed under `C:\Android\Sdk\cmdline-tools`; both archives were checksum-verified against Google repository metadata. Version 20.0 is used because the latest wrapper requires a separate Android CLI download that fails on this connection.
+- Temurin JDK 17.0.21.1 is installed at `C:\Android\jdk-17`; `JAVA_HOME`, `ANDROID_HOME`, and `ANDROID_SDK_ROOT` are configured at user scope.
+- Android platform 35, Build Tools 35.0.0, and Platform Tools are installed; the Android SDK license is accepted.
+- Project requires AGP 8.7.3, Gradle 8.9, JDK 17, compileSdk/targetSdk 35, and minSdk 26. Gradle 8.9 was downloaded from the official Gradle host, checksum-verified, and used to generate the missing project wrapper.
+- `gradlew.bat tasks` and `gradlew.bat assembleDebug` pass. The current debug APK is `app\build\outputs\apk\debug\app-debug.apk` (5,914,550 bytes).
+- Corrected `BluetoothManager`'s `onAppStatusChanged` callback parameter to match the verified Android 35 API signature.
+- Fixed a startup `InflateException` by adding missing width/height attributes to the keyboard-row buttons. Rebuilt and reinstalled; the Keyboard screen renders and no new crash was recorded on relaunch.
+- APK signature verified with the Android debug key; installed on the authorized Redmi Note 14.
+- ADB confirms the KoolKeys process remains alive after relaunch and the home keyboard controls render.
+- Redmi denies `adb shell input` with `INJECT_EVENTS` permission; no connected phone-mirroring window is available for further UI navigation.
+- Downloads through curl and PowerShell web requests have encountered unexpected EOF/network failures; bounded BITS transfers succeeded for the verified SDK tools and JDK archives.
 - Bluetooth HID Device support varies by phone and OS build. API level alone does not prove support; profile registration and a Windows-host connection still require device verification.
 - HID key mapping is currently US QWERTY only. The Windows host must use a matching layout; non-US/non-ASCII code characters are rejected before insertion.
 - Android may unregister a Bluetooth HID app when it is no longer foreground. Background insertion therefore depends on the target device/OS keeping the HID profile active and must be tested; the session stops safely if connection is lost.
 - Line endings/tabs are sent as keyboard actions, but Windows editor auto-indent and host keyboard behavior can affect the final buffer. Exact output in Notepad/VS Code remains unverified.
 - Release signing is configured to read local-only `signing.properties`, but no private keystore has been generated and no signed release APK exists yet.
-- No APK has been built or installed yet.
+- Navigation/editor persistence, preview/confirmation, Bluetooth HID, session controls, and notifications remain unverified.
 
 ## Next steps
 
-1. Restore network access or install a JDK, Gradle, Android SDK, and ADB locally.
-2. Resolve the Redmi/Xiaomi USB ADB driver/interface, then verify the device with `adb devices`.
-3. Build and validate the app; generate a private release keystore and local signing properties before creating a release-signed APK.
-4. Install on the phone, test HID pairing and keyboard/mouse reports against Windows, then test insertion and notifications.
+1. Exercise navigation/editor persistence and session flows with direct phone interaction available.
+2. Physically test Bluetooth HID pairing and keyboard/mouse reports against Windows; report any remaining device or network blockers.
 
 ## Last update
 
-2026-11-25 — User confirmed Redmi Note 14; Xiaomi-vendor USB entries remain unknown composites, with no ADB interface or build toolchain. Build/sign/install verification remains blocked by missing tools and package-network access.
+2026-11-26 — Temurin 17.0.21.1, Android command-line tools, API 35, Build Tools 35.0.0, and the Gradle 8.9 wrapper are installed and verified. `tasks` and `assembleDebug` pass; the APK is installed, and the Keyboard screen renders after fixing the startup inflation crash.
+jj
