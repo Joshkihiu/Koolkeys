@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="20dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Settings" android:textColor="@color/text_primary"
+            android:textSize="22sp" android:textStyle="bold" />
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="16dp" app:cardCornerRadius="16dp"
+            app:cardBackgroundColor="@color/surface_elevated" app:cardElevation="0dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="16dp">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Bluetooth" android:textColor="@color/accent" android:textStyle="bold" />
+                <TextView android:id="@+id/hid_status" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                    android:text="Checking..." android:textColor="@color/text_primary" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:text="Keyboard layout"
+                    android:textColor="@color/text_muted" />
+                <Spinner android:id="@+id/layout_spinner" android:layout_width="match_parent"
+                    android:layout_height="48dp" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="US QWERTY only. The Windows host layout must match; Android HID does not expose the active Windows layout."
+                    android:textColor="@color/text_muted" android:textSize="12sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" app:cardCornerRadius="16dp"
+            app:cardBackgroundColor="@color/surface_elevated" app:cardElevation="0dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="16dp">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="Notifications" android:textColor="@color/accent" android:textStyle="bold" />
+                <CheckBox android:id="@+id/notifications_setting" android:layout_width="match_parent"
+                    android:layout_height="48dp" android:text="Enable notifications"
+                    android:textColor="@color/text_primary" />
+                <CheckBox android:id="@+id/sound_setting" android:layout_width="match_parent"
+                    android:layout_height="48dp" android:text="Notification sound"
+                    android:textColor="@color/text_primary" />
+                <CheckBox android:id="@+id/vibration_setting" android:layout_width="match_parent"
+                    android:layout_height="48dp" android:text="Vibration"
+                    android:textColor="@color/text_primary" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:text="Review reminder"
+                    android:textColor="@color/text_muted" />
+                <Spinner android:id="@+id/review_spinner" android:layout_width="match_parent"
+                    android:layout_height="48dp" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:text="Default session duration"
+                    android:textColor="@color/text_muted" />
+                <Spinner android:id="@+id/default_duration_spinner" android:layout_width="match_parent"
+                    android:layout_height="48dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <Button android:id="@+id/save_settings" android:layout_width="match_parent"
+            android:layout_height="52dp" android:layout_marginTop="14dp" android:text="Save Settings" />
+        <TextView android:id="@+id/settings_saved" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:gravity="center" android:textColor="@color/success" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

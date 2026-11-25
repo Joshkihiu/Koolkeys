@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="surface">#111318</color>
+    <color name="surface_elevated">#1A1D24</color>
+    <color name="surface_highlight">#242832</color>
+    <color name="accent">#7C9CF5</color>
+    <color name="accent_muted">#304174</color>
+    <color name="success">#55C89A</color>
+    <color name="warning">#E7B75B</color>
+    <color name="danger">#E66C7B</color>
+    <color name="text_primary">#F2F4F8</color>
+    <color name="text_muted">#9DA5B3</color>
+    <color name="editor_line">#697182</color>
+</resources>
