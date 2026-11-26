@@ -1,0 +1,337 @@
+package com.koolkeys.app.session;
+
+import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Random;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
+
+public class SessionManagerTest {
+    @Test
+    public void createsUniqueSessionsAndRepeatedStartSchedulesOnlyOneTick() {
+        Fixture fixture = new Fixture();
+        fixture.configure("ab");
+        long firstSessionId = fixture.session.getSessionId();
+        fixture.session.start();
+        fixture.session.start();
+
+        assertTrue(fixture.session.isRunning());
+        assertEquals(2, fixture.scheduler.activeTaskCount());
+
+        fixture.session.stop();
+        fixture.configure("c");
+        assertNotEquals(firstSessionId, fixture.session.getSessionId());
+    }
+
+    @Test
+    public void stopCancelsPendingWorkAndIsIdempotent() {
+        Fixture fixture = new Fixture();
+        fixture.configure("abc");
+        int[] stops = {0};
+        fixture.session.setLifecycleListener(new LifecycleListenerAdapter() {
+            @Override public void onStopped() { stops[0]++; }
+        });
+        fixture.session.start();
+
+        fixture.session.stop();
+        fixture.session.stop();
+        fixture.scheduler.runAllAvailable();
+
+        assertEquals(SessionManager.ExecutionState.STOPPED,
+            fixture.session.getExecutionState());
+        assertEquals(0, fixture.transport.sent.size());
+        assertEquals(1, stops[0]);
+    }
+
+    @Test
+    public void pauseAndResumePreserveTheNextActionAndElapsedTime() {
+        Fixture fixture = new Fixture();
+        fixture.configure("abc");
+        fixture.session.start();
+        fixture.scheduler.runNext();
+        long elapsedAtPause = fixture.session.getElapsedMillis();
+        fixture.session.pause();
+        fixture.scheduler.advanceClock(10_000);
+        fixture.session.resume();
+        fixture.scheduler.runUntil(() -> !fixture.session.isRunning());
+
+        assertEquals("abc", fixture.transport.charactersSent());
+        assertTrue(fixture.session.getElapsedMillis() >= elapsedAtPause);
+        assertEquals(SessionManager.ExecutionState.COMPLETED,
+            fixture.session.getExecutionState());
+    }
+
+    @Test
+    public void staleCallbackCannotWriteIntoANewerSession() {
+        Fixture fixture = new Fixture();
+        fixture.configure("old");
+        fixture.session.start();
+        Runnable staleTick = fixture.scheduler.nextActiveTask();
+
+        fixture.session.stop();
+        fixture.configure("new");
+        fixture.session.start();
+        fixture.scheduler.runEvenIfCancelled(staleTick);
+        assertEquals(0, fixture.transport.sent.size());
+
+        fixture.scheduler.runUntil(() -> !fixture.session.isRunning());
+        assertEquals("new", fixture.transport.charactersSent());
+    }
+
+    @Test
+    public void stopDuringExecutionDoesNotSendMoreActions() {
+        Fixture fixture = new Fixture();
+        fixture.configure("abc");
+        fixture.session.start();
+        fixture.scheduler.runNext();
+        fixture.session.stop();
+        fixture.scheduler.runAllAvailable();
+
+        assertEquals("a", fixture.transport.charactersSent());
+        assertEquals(SessionManager.ExecutionState.STOPPED,
+            fixture.session.getExecutionState());
+    }
+
+    @Test
+    public void failedTransportDoesNotAdvanceOrReportSuccessfulProgress() {
+        Fixture fixture = new Fixture();
+        fixture.configure("a");
+        fixture.transport.acceptReports = false;
+        int[] progressed = {0};
+        fixture.session.setListener(new SessionManager.Listener() {
+            @Override public void onProgress(int completed, int total, int line,
+                                             long elapsed, long duration) {
+                if (completed > 0) progressed[0]++;
+            }
+            @Override public void onStateChanged(String state) { }
+        });
+        fixture.session.start();
+        fixture.scheduler.runNext();
+
+        assertEquals(1, fixture.transport.attempts);
+        assertEquals(0, fixture.transport.sent.size());
+        assertEquals(0, progressed[0]);
+        assertEquals(SessionManager.ExecutionState.STOPPED,
+            fixture.session.getExecutionState());
+    }
+
+    @Test
+    public void previewPositionTracksOnlyAcceptedActionsIncludingCrLf() {
+        Fixture fixture = new Fixture();
+        fixture.configure("a\r\nb");
+        int[] previewPosition = {0};
+        fixture.session.setListener(new SessionManager.Listener() {
+            @Override
+            public void onProgress(int completed, int total, int line,
+                                   long elapsed, long duration) {
+                previewPosition[0] = completed;
+            }
+
+            @Override public void onStateChanged(String state) { }
+        });
+
+        fixture.session.start();
+        fixture.scheduler.runNext();
+        assertEquals(1, previewPosition[0]);
+        assertEquals("a", fixture.session.getText().substring(0, previewPosition[0]));
+        assertEquals(1, fixture.transport.sent.size());
+
+        fixture.scheduler.runNext();
+        assertEquals(3, previewPosition[0]);
+        assertEquals("a\r\n", fixture.session.getText().substring(0, previewPosition[0]));
+        assertEquals("a\n", fixture.transport.charactersSent());
+
+        fixture.session.pause();
+        assertEquals(3, previewPosition[0]);
+        fixture.session.resume();
+        fixture.scheduler.runNext();
+        assertEquals(4, previewPosition[0]);
+        assertEquals("a\r\nb", fixture.session.getText().substring(0, previewPosition[0]));
+    }
+
+    @Test
+    public void simulatedBluetoothDisconnectionStopsWithoutTransmitting() {
+        Fixture fixture = new Fixture();
+        fixture.configure("abc");
+        fixture.session.start();
+        fixture.transport.connected = false;
+        fixture.scheduler.runNext();
+
+        assertEquals(0, fixture.transport.sent.size());
+        assertEquals(SessionManager.ExecutionState.STOPPED,
+            fixture.session.getExecutionState());
+    }
+
+    @Test
+    public void completionCallbackRunsOnceAndCompletedSessionCannotRestart() {
+        Fixture fixture = new Fixture();
+        fixture.configure("x");
+        int[] completions = {0};
+        fixture.session.setLifecycleListener(new LifecycleListenerAdapter() {
+            @Override public void onComplete() { completions[0]++; }
+        });
+        fixture.session.start();
+        fixture.scheduler.runUntil(() -> !fixture.session.isRunning());
+        fixture.session.start();
+        fixture.scheduler.runAllAvailable();
+
+        assertEquals(1, completions[0]);
+        assertEquals("x", fixture.transport.charactersSent());
+        assertEquals(SessionManager.ExecutionState.COMPLETED,
+            fixture.session.getExecutionState());
+    }
+
+    @Test
+    public void notificationControlActionsUseTheAuthoritativeSessionState() {
+        Fixture fixture = new Fixture();
+        fixture.configure("abc");
+        fixture.session.start();
+        fixture.session.handleControlAction(SessionManager.ControlAction.PAUSE);
+        assertEquals(SessionManager.ExecutionState.PAUSED,
+            fixture.session.getExecutionState());
+        fixture.session.handleControlAction(SessionManager.ControlAction.RESUME);
+        assertEquals(SessionManager.ExecutionState.RUNNING,
+            fixture.session.getExecutionState());
+        fixture.session.handleControlAction(SessionManager.ControlAction.STOP);
+        assertEquals(SessionManager.ExecutionState.STOPPED,
+            fixture.session.getExecutionState());
+    }
+
+    private static class Fixture {
+        final FakeScheduler scheduler = new FakeScheduler();
+        final FakeTransport transport = new FakeTransport();
+        final SessionManager session =
+            new SessionManager(transport, scheduler, scheduler, new Random(7));
+
+        void configure(String text) {
+            session.configure(text, 60_000, 0, false);
+        }
+    }
+
+    private static final class FakeTransport implements SessionManager.InputTransport {
+        final List<LiveTypingCursor.Action> sent = new ArrayList<>();
+        boolean connected = true;
+        boolean acceptReports = true;
+        int attempts;
+
+        @Override public boolean isConnected() { return connected; }
+
+        @Override
+        public boolean send(LiveTypingCursor.Action action) {
+            attempts++;
+            if (!acceptReports) return false;
+            sent.add(action);
+            return true;
+        }
+
+        @Override public void releaseAllKeys() { }
+
+        String charactersSent() {
+            StringBuilder result = new StringBuilder();
+            for (LiveTypingCursor.Action action : sent) {
+                if (action.type == LiveTypingCursor.ActionType.ENTER) result.append('\n');
+                else if (action.type == LiveTypingCursor.ActionType.TAB) result.append('\t');
+                else if (action.type == LiveTypingCursor.ActionType.BACKSPACE) result.append('\b');
+                else result.append(action.character);
+            }
+            return result.toString();
+        }
+    }
+
+    private static final class FakeScheduler
+        implements SessionManager.Scheduler, SessionManager.Clock {
+        private final List<Task> tasks = new ArrayList<>();
+        private long now;
+        private long sequence;
+
+        @Override public long elapsedRealtime() { return now; }
+
+        @Override
+        public void postDelayed(Runnable runnable, long delayMillis) {
+            tasks.add(new Task(runnable, now + Math.max(0, delayMillis), sequence++));
+        }
+
+        @Override
+        public void removeCallbacks(Runnable runnable) {
+            if (runnable == null) return;
+            for (Task task : tasks) {
+                if (task.runnable == runnable) task.cancelled = true;
+            }
+        }
+
+        int activeTaskCount() {
+            int count = 0;
+            for (Task task : tasks) if (!task.cancelled) count++;
+            return count;
+        }
+
+        Runnable nextActiveTask() {
+            return nextTask().runnable;
+        }
+
+        void runNext() {
+            Task task = nextTask();
+            tasks.remove(task);
+            now = task.at;
+            task.runnable.run();
+        }
+
+        void runEvenIfCancelled(Runnable runnable) {
+            runnable.run();
+        }
+
+        void runAllAvailable() {
+            while (activeTaskCount() > 0) runNext();
+        }
+
+        void runUntil(Check condition) {
+            int safetyLimit = 10_000;
+            while (!condition.isTrue() && activeTaskCount() > 0 && safetyLimit-- > 0) {
+                runNext();
+            }
+            assertTrue("Scheduled execution did not reach its expected state", safetyLimit > 0);
+        }
+
+        void advanceClock(long millis) {
+            now += millis;
+        }
+
+        private Task nextTask() {
+            return tasks.stream()
+                .filter(task -> !task.cancelled)
+                .min(Comparator.comparingLong((Task task) -> task.at)
+                    .thenComparingLong(task -> task.sequence))
+                .orElseThrow(() -> new AssertionError("No scheduled task"));
+        }
+    }
+
+    private static final class Task {
+        final Runnable runnable;
+        final long at;
+        final long sequence;
+        boolean cancelled;
+
+        Task(Runnable runnable, long at, long sequence) {
+            this.runnable = runnable;
+            this.at = at;
+            this.sequence = sequence;
+        }
+    }
+
+    private interface Check {
+        boolean isTrue();
+    }
+
+    private abstract static class LifecycleListenerAdapter
+        implements SessionManager.LifecycleListener {
+        @Override public void onComplete() { }
+        @Override public void onReviewReminder() { }
+        @Override public void onStopped() { }
+    }
+}

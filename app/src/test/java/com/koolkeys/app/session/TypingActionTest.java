@@ -39,4 +39,21 @@ public class TypingActionTest {
         assertEquals(TypingAction.Type.TAB, actions.get(0).type);
         assertEquals(TypingAction.Type.BACKSPACE, actions.get(1).type);
     }
+
+    @Test
+    public void schedulesEscapeAsItsOwnActionBeforeEachEnter() {
+        List<TypingAction> actions = SessionManager.buildSessionActions("a\r\nb\n");
+
+        assertEquals(6, actions.size());
+        assertEquals(TypingAction.Type.CHARACTER, actions.get(0).type);
+        assertEquals(TypingAction.Type.ESCAPE, actions.get(1).type);
+        assertEquals(1, actions.get(1).positionAfter);
+        assertEquals(TypingAction.Type.ENTER, actions.get(2).type);
+        assertEquals(3, actions.get(2).positionAfter);
+        assertEquals(TypingAction.Type.CHARACTER, actions.get(3).type);
+        assertEquals(TypingAction.Type.ESCAPE, actions.get(4).type);
+        assertEquals(4, actions.get(4).positionAfter);
+        assertEquals(TypingAction.Type.ENTER, actions.get(5).type);
+        assertEquals(5, actions.get(5).positionAfter);
+    }
 }

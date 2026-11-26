@@ -29,9 +29,10 @@ public class KoolKeysApplication extends Application {
         super.onCreate();
         bluetoothManager = new BluetoothManager(this);
         sessionManager = new SessionManager(bluetoothManager);
+        bluetoothManager.setDiagnosticsListener(sessionManager::recordBluetoothCallback);
         sessionManager.setLifecycleListener(new SessionManager.LifecycleListener() {
             @Override public void onComplete() {
-                postEventNotification("Code insertion completed");
+                postEventNotification("Accepted by Android Bluetooth; Windows receipt is unconfirmed");
                 stopService(new Intent(KoolKeysApplication.this, InsertionForegroundService.class));
             }
 
@@ -56,6 +57,7 @@ public class KoolKeysApplication extends Application {
 
     @Override
     public void onTerminate() {
+        sessionManager.shutdown();
         bluetoothManager.shutdown();
         super.onTerminate();
     }

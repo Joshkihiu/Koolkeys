@@ -33,9 +33,14 @@ public class BluetoothManager {
         void onStatusChanged(String status);
     }
 
+    public interface DiagnosticsListener {
+        void onBluetoothCallback(String callbackName, boolean connected);
+    }
+
     private static final int KEYBOARD_REPORT_ID = 1;
     private static final int MOUSE_REPORT_ID = 2;
     private static final int MODIFIER_SHIFT = 0x02;
+    public static final long KEY_PRESS_DURATION_MILLIS = 40;
     private static final byte[] REPORT_DESCRIPTOR = {
         (byte) 0x05, (byte) 0x01, (byte) 0x09, (byte) 0x06, (byte) 0xA1, (byte) 0x01,
         (byte) 0x85, (byte) 0x01, (byte) 0x05, (byte) 0x07, (byte) 0x19, (byte) 0xE0,
@@ -60,18 +65,19 @@ public class BluetoothManager {
     private final BluetoothAdapter adapter;
     private final Executor callbackExecutor;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private BluetoothHidDevice hidDevice;
+    private volatile BluetoothHidDevice hidDevice;
     private BluetoothDevice pendingDevice;
-    private BluetoothDevice connectedDevice;
-    private StatusListener statusListener;
+    private volatile BluetoothDevice connectedDevice;
+    private volatile StatusListener statusListener;
+    private volatile DiagnosticsListener diagnosticsListener;
     private boolean appRegistered;
     private boolean profileRequestPending;
     private boolean registrationDesired;
     private boolean receiverRegistered;
     private int registrationAttempts;
     private long registrationGeneration;
-    private String status = "Bluetooth not initialized";
-    private int modifierMask;
+    private volatile String status = "Bluetooth not initialized";
+    private volatile int modifierMask;
     private final Runnable registrationTimeout = () -> {
         profileRequestPending = false;
         if (!appRegistered) {
@@ -89,6 +95,7 @@ public class BluetoothManager {
                 connectedDevice = null;
                 appRegistered = false;
                 updateStatus("Bluetooth off. Turn it on to restore HID.");
+                recordBluetoothCallback("bluetooth-state-off", false);
             } else if (state == BluetoothAdapter.STATE_ON) {
                 updateStatus("Bluetooth on.");
                 if (registrationDesired) {
@@ -117,6 +124,7 @@ public class BluetoothManager {
                 registrationAttempts = 0;
                 updateStatus("HID ready. Pair this phone from Windows Bluetooth settings.");
             }
+            recordBluetoothCallback("onAppStatusChanged", connectedDevice != null);
         }
 
         @Override
@@ -138,6 +146,7 @@ public class BluetoothManager {
             } else if (state == BluetoothProfile.STATE_CONNECTING) {
                 updateStatus("Connecting to " + safeDeviceName(device));
             }
+            recordBluetoothCallback("onConnectionStateChanged", connectedDevice != null);
         }
     };
 
@@ -156,6 +165,10 @@ public class BluetoothManager {
     public void setStatusListener(StatusListener listener) {
         statusListener = listener;
         if (listener != null) listener.onStatusChanged(getStatusSummary());
+    }
+
+    public void setDiagnosticsListener(DiagnosticsListener listener) {
+        diagnosticsListener = listener;
     }
 
     public boolean hasHidApi() {
@@ -279,6 +292,7 @@ public class BluetoothManager {
             connectedDevice = null;
             modifierMask = 0;
             updateStatus("Bluetooth HID profile disconnected. Tap Connect to retry.");
+            recordBluetoothCallback("onServiceDisconnected", false);
         }
     };
 
@@ -372,18 +386,26 @@ public class BluetoothManager {
     }
 
     public boolean sendCharacter(char character) {
+        return sendCharacter(character, KEY_PRESS_DURATION_MILLIS);
+    }
+
+    public boolean sendCharacter(char character, long pressDurationMillis) {
         int[] key = mapUsKeyboardCharacter(character);
         if (key == null) {
             updateStatus(String.format("Cannot type U+%04X with the US keyboard map.", (int) character));
             return false;
         }
-        return sendKey(key[0], key[1]);
+        return sendKey(key[0], key[1], pressDurationMillis);
     }
 
-    public boolean sendEnter() { return sendKey(0x28, 0); }
-    public boolean sendTab() { return sendKey(0x2B, 0); }
-    public boolean sendBackspace() { return sendKey(0x2A, 0); }
-    public boolean sendEscape() { return sendKey(0x29, 0); }
+    public boolean sendEnter() { return sendEnter(KEY_PRESS_DURATION_MILLIS); }
+    public boolean sendEnter(long pressDurationMillis) { return sendKey(0x28, 0, pressDurationMillis); }
+    public boolean sendTab() { return sendTab(KEY_PRESS_DURATION_MILLIS); }
+    public boolean sendTab(long pressDurationMillis) { return sendKey(0x2B, 0, pressDurationMillis); }
+    public boolean sendBackspace() { return sendBackspace(KEY_PRESS_DURATION_MILLIS); }
+    public boolean sendBackspace(long pressDurationMillis) { return sendKey(0x2A, 0, pressDurationMillis); }
+    public boolean sendEscape() { return sendEscape(KEY_PRESS_DURATION_MILLIS); }
+    public boolean sendEscape(long pressDurationMillis) { return sendKey(0x29, 0, pressDurationMillis); }
     public boolean sendArrow(int usage) { return sendKey(usage, 0); }
 
     public String validateText(String text) {
@@ -398,12 +420,16 @@ public class BluetoothManager {
     }
 
     private boolean sendKey(int usage, int extraModifiers) {
+        return sendKey(usage, extraModifiers, KEY_PRESS_DURATION_MILLIS);
+    }
+
+    private boolean sendKey(int usage, int extraModifiers, long pressDurationMillis) {
         if (connectedDevice == null) {
             updateStatus("Connect KoolKeys to a Windows host before sending input.");
             return false;
         }
         boolean pressed = sendKeyboardReport(usage, modifierMask | extraModifiers);
-        if (usage != 0) SystemClock.sleep(6);
+        if (usage != 0 && pressDurationMillis > 0) SystemClock.sleep(pressDurationMillis);
         boolean released = sendKeyboardReport(0, modifierMask);
         return pressed && released;
     }
@@ -445,7 +471,21 @@ public class BluetoothManager {
 
     private void updateStatus(String newStatus) {
         status = newStatus;
-        if (statusListener != null) statusListener.onStatusChanged(newStatus);
+        StatusListener currentListener = statusListener;
+        if (currentListener == null) return;
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            currentListener.onStatusChanged(newStatus);
+        } else {
+            handler.post(() -> {
+                StatusListener listener = statusListener;
+                if (listener != null) listener.onStatusChanged(newStatus);
+            });
+        }
+    }
+
+    private void recordBluetoothCallback(String callbackName, boolean connected) {
+        DiagnosticsListener listener = diagnosticsListener;
+        if (listener != null) listener.onBluetoothCallback(callbackName, connected);
     }
 
     private void postConnectionNotification(String message) {

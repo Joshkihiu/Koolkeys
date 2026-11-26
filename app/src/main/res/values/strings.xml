@@ -9,4 +9,46 @@
     <string name="notification_channel_description">Code insertion, review, and connection notifications</string>
     <string name="notification_event_channel_name">KoolKeys alerts</string>
     <string name="notification_event_channel_description">Pause, review, and completion alerts</string>
+    <string name="insertion_progress">Locally submitted: %1$d / %2$d characters</string>
+    <string name="insertion_line">Line %1$d of %2$d</string>
+    <string name="insertion_next_character">Next source character: "%1$s" (U+%2$04X)</string>
+    <string name="insertion_next_enter">Next source action: Enter</string>
+    <string name="insertion_next_tab">Next source action: Tab</string>
+    <string name="insertion_next_backspace">Next source action: Backspace</string>
+    <string name="insertion_current_character">Current local action: "%1$s" (U+%2$04X)</string>
+    <string name="insertion_current_escape">Current local action: Escape</string>
+    <string name="insertion_current_enter">Current local action: Enter</string>
+    <string name="insertion_current_tab">Current local action: Tab</string>
+    <string name="insertion_current_backspace">Current local action: Backspace</string>
+    <string name="insertion_no_next_source">No more source characters</string>
+    <string name="insertion_no_current_action">None</string>
+    <string name="insertion_not_measured">not measured</string>
+    <string name="insertion_time_remaining">Elapsed %1$s · Est. local send %2$s</string>
+    <string name="insertion_send_note">Progress reflects local Bluetooth acceptance, not Windows receipt.</string>
+    <string name="insertion_no_reference_duration">No reference duration selected</string>
+    <string name="insertion_reference_duration">Reference duration: %1$s (does not change typing pace)</string>
+    <string name="insertion_speed_label">Typing speed</string>
+    <string name="insertion_pace">Selected speed: %1$d WPM (maximum 30)</string>
+    <string name="insertion_start_button">Start</string>
+    <string name="insertion_start_confirmation_title">Start paced insertion?</string>
+    <string name="insertion_start_confirmation_message">Send %1$d characters on %2$d lines, one key at a time at %3$d WPM. Windows receipt cannot be confirmed.</string>
+    <string name="insertion_current_word">Local input word/item: %1$s</string>
+    <string name="insertion_no_pending_word">No pending input</string>
+    <string name="insertion_word_enter">Enter</string>
+    <string name="insertion_word_tab">Tab</string>
+    <string name="insertion_word_backspace">Backspace</string>
+    <string name="insertion_word_space">Space</string>
+    <string name="insertion_monitor_title">Small local input window · Android state, not Windows receipt</string>
+    <string name="insertion_monitor_empty">Waiting for insertion</string>
+    <string name="insertion_diagnostics">Actions accepted by Android Bluetooth: %1$d/%2$d; remaining app actions (not in flight): %3$d; current: %4$s\nAction time last/avg/max: %5$s/%6$s/%7$s ms\nLocal action-start gap: %15$s ms; recent action times: %14$s ms\nLast state-change gap: %8$s ms; Bluetooth callback gap: %9$s ms\nPause/Resume/Stop response: %10$s/%11$s/%12$s ms\nSession local time: %13$s ms; host receipt: unconfirmed</string>
+    <string-array name="insertion_speed_options">
+        <item>1 WPM</item>
+        <item>2 WPM</item>
+        <item>5 WPM</item>
+        <item>10 WPM</item>
+        <item>15 WPM</item>
+        <item>20 WPM</item>
+        <item>30 WPM</item>
+    </string-array>
+    <string name="insertion_finished_toast">All actions accepted by Android Bluetooth; Windows receipt is unconfirmed.</string>
 </resources>

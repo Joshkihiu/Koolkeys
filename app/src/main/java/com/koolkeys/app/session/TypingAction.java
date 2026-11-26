@@ -7,6 +7,7 @@ import java.util.List;
 final class TypingAction {
     enum Type {
         CHARACTER,
+        ESCAPE,
         ENTER,
         TAB,
         BACKSPACE
@@ -20,6 +21,10 @@ final class TypingAction {
         this.type = type;
         this.character = character;
         this.positionAfter = positionAfter;
+    }
+
+    static TypingAction escape(int positionAfter) {
+        return new TypingAction(Type.ESCAPE, '\0', positionAfter);
     }
 
     static List<TypingAction> build(String text) {
